@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>SG1A Project Controls</title>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+:root{
+  --bg:#0f172a; --panel:#1e293b; --panel2:#273449; --text:#e2e8f0; --muted:#94a3b8;
+  --accent:#38bdf8; --ok:#22c55e; --warn:#f59e0b; --danger:#ef4444; --border:#334155; --r:8px;
+}
+*{box-sizing:border-box;}
+body{margin:0;font-family:-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--text);font-size:14px;}
+header{display:flex;justify-content:space-between;align-items:center;padding:14px 24px;background:var(--panel);border-bottom:1px solid var(--border);}
+header h1{font-size:17px;margin:0;}
+.btn{padding:9px 18px;border:1px solid var(--border);border-radius:var(--r);background:var(--panel2);color:var(--text);cursor:pointer;font-size:13px;}
+.btn:hover{border-color:var(--accent);}
+.btn.primary{background:var(--accent);color:#0f172a;border-color:var(--accent);font-weight:600;}
+.btn.danger{background:transparent;color:var(--danger);border-color:var(--danger);}
+main{max-width:1400px;margin:0 auto;padding:22px;}
+.hidden{display:none!important;}
+.drop{border:2px dashed var(--border);border-radius:var(--r);padding:50px;text-align:center;background:var(--panel);transition:.2s;}
+.drop.drag{border-color:var(--accent);background:var(--panel2);}
+.muted{color:var(--muted);font-size:12px;}
+.status{margin-top:14px;padding:10px 14px;border-radius:var(--r);background:var(--panel);border-left:4px solid var(--accent);}
+.status.error{border-left-color:var(--danger);}
+.status.ok{border-left-color:var(--ok);}
+.panel{margin-top:20px;background:var(--panel);border:1px solid var(--border);border-radius:var(--r);padding:18px;}
+.panel h2{margin:0 0 14px;font-size:14px;color:var(--accent);text-transform:uppercase;letter-spacing:.5px;}
+.steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;}
+.step{background:var(--panel2);padding:12px;border-radius:var(--r);border:1px solid var(--border);}
+.step .lbl{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;}
+.step select,.step input{width:100%;padding:8px;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:4px;font-size:13px;}
+.step select:disabled{opacity:.45;cursor:not-allowed;}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;}
+.kpi{background:var(--panel2);padding:14px;border-radius:var(--r);border:1px solid var(--border);}
+.kpi .l{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;}
+.kpi .v{font-size:22px;font-weight:700;margin-top:6px;}
+.kpi .v.ok{color:var(--ok);}
+.kpi .v.warn{color:var(--warn);}
+.kpi .v.danger{color:var(--danger);}
+.chartbox{background:var(--panel2);padding:12px;border-radius:var(--r);height:340px;position:relative;}
+.tablewrap{overflow-x:auto;}
+table{width:100%;border-collapse:collapse;}
+th,td{padding:10px 12px;text-align:left;border-bottom:1px solid var(--border);}
+th{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.5px;}
+tr:hover td{background:var(--panel2);}
+.bar{height:8px;background:var(--border);border-radius:4px;overflow:hidden;min-width:90px;}
+.bar>span{display:block;height:100%;background:var(--ok);border-radius:4px;}
+footer{text-align:center;padding:20px;color:var(--muted);font-size:12px;}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>SG1A — Project Controls</h1>
+  <div style="display:flex;gap:10px;">
+    <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" hidden/>
+    <button class="btn primary" id="uploadBtn">Upload Excel</button>
+    <button class="btn danger" id="resetBtn">Reset</button>
+  </div>
+</header>
+
+<main>
+  <section id="dropZone" class="drop">
+    <p><strong>Drop your Excel file here</strong> or click Upload.</p>
+    <p class="muted">Processed locally in your browser. .xlsx, .xls, .csv</p>
+  </section>
+
+  <div id="statusBar" class="status hidden"></div>
+
+  <section id="selectPanel" class="panel hidden">
+    <h2>Select what to analyse</h2>
+    <div class="steps">
+      <div class="step">
+        <div class="lbl">1. System (sheet)</div>
+        <select id="systemSel"></select>
+      </div>
+      <div class="step">
+        <div class="lbl">2. Completion stage</div>
+        <select id="stageSel"></select>
+      </div>
+      <div class="step">
+        <div class="lbl">3. View by</div>
+        <select id="viewBySel">
+          <option value="zone">Zone</option>
+          <option value="pod">Pod</option>
+        </select>
+      </div>
+      <div class="step">
+        <div class="lbl">4. Filter (optional)</div>
+        <select id="filterSel"><option value="">— all —</option></select>
+      </div>
+      <div class="step">
+        <div class="lbl">5. Work start date</div>
+        <input type="date" id="startDateInput" value="2026-07-15"/>
+        <div class="muted" style="margin-top:4px;">CCTV: 15-Jul-2026 · LCS: 20-Sep-2026</div>
+      </div>
+    </div>
+  </section>
+
+  <section id="kpiPanel" class="panel hidden">
+    <h2 id="kpiTitle">Summary</h2>
+    <div class="kpis" id="kpiGrid"></div>
+  </section>
+
+  <section id="chartPanel" class="panel hidden">
+    <h2 id="chartTitle">Progress</h2>
+    <div class="chartbox"><canvas id="mainChart"></canvas></div>
+  </section>
+
+  <section id="tablePanel" class="panel hidden">
+    <h2 id="tableTitle">Breakdown</h2>
+    <div class="tablewrap">
+      <table id="breakdownTable">
+        <thead><tr>
+          <th id="groupHeader">Zone</th>
+          <th>Items</th>
+          <th>Done</th>
+          <th>Pending</th>
+          <th>% Done</th>
+          <th style="width:130px;">Progress</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<footer>All processing local. Data never leaves your browser.</footer>
+
+<script>
+/* ================================================================
+   STATE
+   ================================================================ */
+const state = {
+  sheets: [],
+  stageCols: [],
+  chart: null,
+  currentSheet: null,
+  currentStageDateCol: null,
+};
+
+const $ = id => document.getElementById(id);
+
+/* ================================================================
+   HELPERS
+   ================================================================ */
+function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function status(msg,type=''){const el=$('statusBar');el.textContent=msg;el.className='status '+type;el.classList.remove('hidden');}
+
+function isDone(v){
+  if(v===null||v===undefined) return false;
+  const s = String(v).trim().toLowerCase();
+  if(!s) return false;
+  if(s==='done'||s==='complete'||s==='completed'||s==='yes'||s==='y'||s==='pass'||s==='ok') return true;
+  if(s==='p'||s==='pending'||s==='wip'||s==='fail'||s==='star'||s==='f') return false;
+  if(/\d{1,4}[\/\.\-]\d{1,2}[\/\.\-]\d{1,4}/.test(s)) return true;
+  return false;
+}
+function isPending(v){
+  if(v===null||v===undefined) return true;
+  const s = String(v).trim().toLowerCase();
+  if(!s) return true;
+  if(s==='p'||s==='pending'||s==='wip') return true;
+  return false;
+}
+
+/* ================================================================
+   UPLOAD & PARSE
+   ================================================================ */
+$('uploadBtn').addEventListener('click',()=>$('fileInput').click());
+$('fileInput').addEventListener('change',e=>{if(e.target.files[0])handleFile(e.target.files[0]);});
+['dragenter','dragover'].forEach(ev=>$('dropZone').addEventListener(ev,e=>{e.preventDefault();$('dropZone').classList.add('drag');}));
+['dragleave','drop'].forEach(ev=>$('dropZone').addEventListener(ev,e=>{e.preventDefault();$('dropZone').classList.remove('drag');}));
+$('dropZone').addEventListener('drop',e=>{const f=e.dataTransfer.files[0];if(f)handleFile(f);});
+
+async function handleFile(file){
+  status('Reading '+file.name+' …');
+  try{
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(new Uint8Array(buf),{type:'array',cellDates:true});
+
+    const sheets = [];
+    wb.SheetNames.forEach(name=>{
+      const ws = wb.Sheets[name];
+      const aoa = XLSX.utils.sheet_to_json(ws,{header:1,defval:null,blankrows:false});
+      if(aoa.length < 2) return;
+
+      let hIdx=0;
+      for(let i=0;i<Math.min(aoa.length,10);i++){
+        const nz = aoa[i].filter(c=>c!==null&&c!=='').length;
+        if(nz>=3){hIdx=i;break;}
+      }
+      const rawHeaders = aoa[hIdx].map((h,i)=>{
+        const s=(h===null||h===undefined)?'':String(h).replace(/\s+/g,' ').trim();
+        return s||('Col_'+String.fromCharCode(65+i));
+      });
+      const seen={};
+      const headers=rawHeaders.map(h=>{if(seen[h]){seen[h]++;return h+'_'+seen[h];}seen[h]=1;return h;});
+
+      const rows=[];
+      for(let i=hIdx+1;i<aoa.length;i++){
+        const row={};let has=false;
+        for(let j=0;j<headers.length;j++){
+          const v=aoa[i][j];
+          row[headers[j]]=(v===undefined)?null:v;
+          if(v!==null&&v!=='')has=true;
+        }
+        if(has)rows.push(row);
+      }
+      sheets.push({name,rows,headers});
+    });
+
+    if(sheets.length===0){status('No data rows found.','error');return;}
+    state.sheets = sheets;
+
+    const sysSel = $('systemSel');
+    sysSel.innerHTML = '';
+    sheets.forEach((s,i)=>{
+      const o=document.createElement('option');
+      o.value=i;o.textContent=s.name+' ('+s.rows.length+' rows)';
+      sysSel.appendChild(o);
+    });
+    sysSel.disabled = false;
+
+    loadSheet(0);
+    $('dropZone').classList.add('hidden');
+    $('selectPanel').classList.remove('hidden');
+    status('Loaded '+sheets.length+' sheet(s).','ok');
+  }catch(err){
+    console.error(err);
+    status('Error: '+err.message,'error');
+  }
+}
+
+/* ================================================================
+   LOAD A SHEET — detect stages, zones, pods
+   ================================================================ */
+function loadSheet(idx){
+  state.currentSheet = state.sheets[idx];
+  const s = state.currentSheet;
+
+  const STAGE_KEYWORDS = ['conduit','cable','termination','install','fluke','test','mer','ser','rack','field','base','device','panel','pull'];
+  const stageCols = [];
+  s.headers.forEach(h=>{
+    const lh = h.toLowerCase();
+    if(STAGE_KEYWORDS.some(k=>lh.includes(k))) stageCols.push(h);
+  });
+  state.stageCols = stageCols.length ? stageCols : s.headers.filter(h=>{
+    let doneLike=0,total=0;
+    s.rows.forEach(r=>{const v=r[h];if(v!==null&&v!==''){total++;if(isDone(v)||isPending(v))doneLike++;}});
+    return total>0 && doneLike/total >= 0.5;
+  });
+
+  const stageSel = $('stageSel');
+  stageSel.innerHTML = '';
+  const usableStages = state.stageCols.filter(h=>{
+    let c=0;s.rows.forEach(r=>{if(r[h]!==null&&r[h]!=='')c++;});
+    return c>0;
+  });
+  usableStages.forEach(h=>{
+    const o=document.createElement('option');
+    o.value=h;
+    o.textContent = h.replace(/<br>/gi,' ').replace(/\s+/g,' ').trim();
+    stageSel.appendChild(o);
+  });
+  const defIdx = usableStages.findIndex(h=>/camera|device/i.test(h));
+  stageSel.selectedIndex = defIdx>=0?defIdx:0;
+  stageSel.disabled = false;
+
+  rebuildFilterDropdown();
+  runAnalysis();
+}
+
+function findCol(sheet, kws){
+  for(const h of sheet.headers){
+    const lh=h.toLowerCase();
+    if(kws.some(k=>lh.includes(k))) return h;
+  }
+  return null;
+}
+function getZoneCol(s){return findCol(s,['zone']);}
+function getPodCol(s){return findCol(s,['pod']);}
+
+function rebuildFilterDropdown(){
+  const s = state.currentSheet;
+  const dim = $('viewBySel').value;
+  const col = dim==='zone'?getZoneCol(s):getPodCol(s);
+  const sel = $('filterSel');
+  sel.innerHTML = '<option value="">— all —</option>';
+  if(!col){sel.disabled=true;return;}
+  const vals=new Set();
+  s.rows.forEach(r=>{const v=r[col];if(v!==null&&v!=='')vals.add(String(v).trim());});
+  Array.from(vals).sort().forEach(v=>{
+    const o=document.createElement('option');o.value=v;o.textContent=v;sel.appendChild(o);
+  });
+  sel.disabled=false;
+}
+
+$('systemSel').addEventListener('change',()=>{loadSheet(parseInt($('systemSel').value,10));});
+$('stageSel').addEventListener('change',runAnalysis);
+$('viewBySel').addEventListener('change',()=>{rebuildFilterDropdown();runAnalysis();});
+$('filterSel').addEventListener('change',runAnalysis);
+$('startDateInput').addEventListener('change',runAnalysis);
+
+/* ================================================================
+   FIND THE DATE COLUMN BELONGING TO A STAGE
+   The sheet layout is: [stage cell][DATE cell][stage cell][DATE cell]...
+   So the stage's own date column is the next column whose header
+   contains "date" (or whose values are mostly dates).
+   ================================================================ */
+function findStageDateCol(sheet, stageCol){
+  const headers = sheet.headers;
+  const idx = headers.indexOf(stageCol);
+  if(idx < 0) return null;
+
+  // 1. Look at the very next column; if it's a date column, use it
+  for(let k=idx+1; k<Math.min(idx+4, headers.length); k++){
+    const h = headers[k];
+    const lh = h.toLowerCase();
+    if(lh.includes('date')) return h;
+  }
+  // 2. Fallback: next column whose values are mostly parseable dates
+  for(let k=idx+1; k<Math.min(idx+3, headers.length); k++){
+    const h = headers[k];
+    let dateCount=0, total=0;
+    sheet.rows.forEach(r=>{
+      const v=r[h];
+      if(v!==null&&v!==''){
+        total++;
+        if(v instanceof Date || parseLooseDate(v)) dateCount++;
+      }
+    });
+    if(total>0 && dateCount/total >= 0.5) return h;
+  }
+  return null;
+}
+
+/* ================================================================
+   ANALYSIS
+   ================================================================ */
+function runAnalysis(){
+  const s = state.currentSheet;
+  if(!s) return;
+
+  const stage = $('stageSel').value;
+  const dim = $('viewBySel').value;
+  const filterVal = $('filterSel').value;
+  const startDate = $('startDateInput').value || null;
+  const dimCol = dim==='zone'?getZoneCol(s):getPodCol(s);
+
+  let rows = s.rows;
+  if(filterVal && dimCol){
+    rows = rows.filter(r=>String(r[dimCol]||'').trim()===filterVal);
+  }
+
+  let groupCol, groupLabel;
+  if(filterVal){
+    const other = dim==='zone'?'pod':'zone';
+    groupCol = other==='zone'?getZoneCol(s):getPodCol(s);
+    groupLabel = other==='zone'?'Zone':'Pod';
+    if(!groupCol){groupLabel='All';}
+  }else{
+    groupCol = dimCol;
+    groupLabel = dim==='zone'?'Zone':'Pod';
+  }
+
+  const groups = {};
+  let total=0, done=0;
+  rows.forEach(r=>{
+    total++;
+    const d = isDone(r[stage]) ? 1 : 0;
+    done += d;
+    const key = groupCol ? (String(r[groupCol]||'').trim()||'(blank)') : 'Total';
+    if(!groups[key]) groups[key]={total:0,done:0};
+    groups[key].total++;
+    groups[key].done += d;
+  });
+
+  const pct = total>0?(done/total)*100:0;
+  const titleBase = s.name + (filterVal?(' › '+filterVal):'');
+  const stageLabel = stage.replace(/<br>/gi,' ').replace(/\s+/g,' ').trim();
+
+  $('kpiTitle').textContent = 'Summary — '+titleBase+' ('+stageLabel+')';
+  $('chartTitle').textContent = 'Progress — '+titleBase;
+  $('tableTitle').textContent = groupLabel+' breakdown — '+titleBase;
+  $('groupHeader').textContent = groupLabel;
+
+  const fc = computeForecast(rows, stage, startDate);
+
+  $('kpiGrid').innerHTML = `
+    <div class="kpi"><div class="l">Items (rows)</div><div class="v">${total}</div></div>
+    <div class="kpi"><div class="l">Done — ${esc(stageLabel)}</div><div class="v ok">${done}</div></div>
+    <div class="kpi"><div class="l">Pending</div><div class="v warn">${total-done}</div></div>
+    <div class="kpi"><div class="l">% Complete</div>
+      <div class="v ${pct>=100?'ok':pct>=50?'warn':'danger'}">${pct.toFixed(1)}%</div></div>
+    <div class="kpi"><div class="l">${esc(groupLabel)}s</div><div class="v">${Object.keys(groups).length}</div></div>
+    <div class="kpi"><div class="l">Days since start</div>
+      <div class="v">${fc.daysElapsed ?? '—'}</div></div>
+    <div class="kpi"><div class="l">Avg install / day</div>
+      <div class="v">${fc.avgPerDay != null ? fc.avgPerDay.toFixed(2) : '—'}</div></div>
+    <div class="kpi"><div class="l">Forecast finish</div>
+      <div class="v ${fc.finishDate?'ok':'warn'}" style="font-size:16px;">${fc.finishText}</div></div>
+    <div class="kpi"><div class="l">Days remaining</div>
+      <div class="v ${fc.daysToFinish===0?'ok':''}">${fc.daysText}</div></div>
+  `;
+  $('kpiPanel').classList.remove('hidden');
+
+  renderChart(groups,groupLabel,titleBase,stageLabel);
+  $('chartPanel').classList.remove('hidden');
+
+  renderTable(groups);
+  $('tablePanel').classList.remove('hidden');
+}
+
+/* ================================================================
+   FORECAST ENGINE  (corrected)
+   ----------------------------------------------------------------
+   1. Stage's own date column is found (next column).
+   2. Days elapsed = today - startDate.
+   3. Items done = count of rows where the STAGE cell is Done.
+   4. Average per day = itemsDone / daysElapsed.
+   5. Pending = total rows - itemsDone.
+   6. Days to finish = pending / avgPerDay.
+   7. Finish date = today + daysToFinish.
+   ================================================================ */
+function computeForecast(rows, stageCol, startDate){
+  const s = state.currentSheet;
+  const dateCol = findStageDateCol(s, stageCol);
+  state.currentStageDateCol = dateCol;
+
+  const today = new Date();
+  const start = startDate ? new Date(startDate) : null;
+  const daysElapsed = start ? Math.max(1, Math.round((today - start)/(24*3600*1000))) : null;
+
+  const total = rows.length;
+  let done = 0;
+  let datedDone = 0;                 // done AND has a valid date
+  const dateBuckets = {};            // for info: how many per day/week
+
+  rows.forEach(r=>{
+    if(!isDone(r[stageCol])) return;
+    done++;
+    if(dateCol){
+      const dv = r[dateCol];
+      let d = null;
+      if(dv instanceof Date) d = dv;
+      else if(dv) d = parseLooseDate(dv);
+      if(d){
+        datedDone++;
+        const key = d.toISOString().slice(0,10);
+        dateBuckets[key] = (dateBuckets[key]||0) + 1;
+      }
+    }
+  });
+
+  const pending = total - done;
+
+  // If we don't have start date, can't compute a rate
+  if(!start || daysElapsed == null || daysElapsed <= 0){
+    return {
+      daysElapsed: null,
+      avgPerDay: null,
+      finishDate: null,
+      finishText: pending===0 ? 'Complete' : 'Set start date',
+      daysText: '—',
+      daysToFinish: null,
+    };
+  }
+
+  // Average per day based on DONE items (dated or not) since start
+  const avgPerDay = done / daysElapsed;
+
+  if(pending <= 0){
+    return {
+      daysElapsed,
+      avgPerDay,
+      finishDate: today,
+      finishText: 'Complete',
+      daysText: '0',
+      daysToFinish: 0,
+    };
+  }
+  if(avgPerDay <= 0){
+    return {
+      daysElapsed,
+      avgPerDay: 0,
+      finishDate: null,
+      finishText: 'Not started / no progress',
+      daysText: '∞',
+      daysToFinish: Infinity,
+    };
+  }
+
+  const daysToFinish = Math.ceil(pending / avgPerDay);
+  const finishDate = new Date(today.getTime() + daysToFinish*24*3600*1000);
+
+  return {
+    daysElapsed,
+    avgPerDay,
+    finishDate,
+    finishText: fmtDate(finishDate),
+    daysText: daysToFinish.toLocaleString(),
+    daysToFinish,
+  };
+}
+
+function fmtDate(d){
+  if(!d || isNaN(d)) return '—';
+  return d.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'});
+}
+
+function parseLooseDate(s){
+  if(!s) return null;
+  s = String(s).trim();
+  if(!s) return null;
+  const m = s.match(/^(\d{1,2})[\/\.\-](\d{1,2})[\/\.\-](\d{2,4})$/);
+  if(m){
+    let [,d,mo,y] = m;
+    d = parseInt(d,10); mo = parseInt(mo,10); y = parseInt(y,10);
+    if(y<100) y += 2000;
+    if(y<2000 || y>2050) return null;
+    if(mo<1 || mo>12 || d<1 || d>31) return null;
+    const dt = new Date(y, mo-1, d);
+    return isNaN(dt) ? null : dt;
+  }
+  return null;
+}
+
+/* ================================================================
+   CHART
+   ================================================================ */
+function renderChart(groups,groupLabel,title,stageLabel){
+  if(state.chart){state.chart.destroy();state.chart=null;}
+  const entries=Object.entries(groups).sort((a,b)=>b[1].total-a[1].total);
+  const labels=entries.map(e=>e[0]);
+  const totals=entries.map(e=>e[1].total);
+  const dones=entries.map(e=>e[1].done);
+
+  state.chart=new Chart($('mainChart'),{
+    type:'bar',
+    data:{
+      labels,
+      datasets:[
+        {label:'Items',data:totals,backgroundColor:'rgba(56,189,248,0.6)'},
+        {label:'Done',data:dones,backgroundColor:'rgba(34,197,94,0.85)'},
+      ],
+    },
+    options:{
+      responsive:true,
+      maintainAspectRatio:false,
+      plugins:{
+        legend:{labels:{color:'#e2e8f0'}},
+        title:{display:true,text:title+' — '+groupLabel+' ('+stageLabel+')',color:'#e2e8f0'},
+        tooltip:{
+          callbacks:{
+            afterBody:(items)=>{
+              if(!items.length)return'';
+              const i=items[0].dataIndex,t=totals[i]||0,d=dones[i]||0;
+              return 'Progress: '+(t>0?((d/t)*100).toFixed(1):'0.0')+'%';
+            },
+          },
+        },
+      },
+      scales:{
+        x:{ticks:{color:'#94a3b8'},grid:{color:'#334155'}},
+        y:{ticks:{color:'#94a3b8'},grid:{color:'#334155'},beginAtZero:true},
+      },
+    },
+  });
+}
+
+/* ================================================================
+   TABLE
+   ================================================================ */
+function renderTable(groups){
+  const tbody=document.querySelector('#breakdownTable tbody');
+  tbody.innerHTML='';
+  const entries=Object.entries(groups).sort((a,b)=>b[1].total-a[1].total);
+  entries.forEach(([key,g])=>{
+    const rem=g.total-g.done;
+    const pct=g.total>0?(g.done/g.total)*100:0;
+    const tr=document.createElement('tr');
+    tr.innerHTML=`
+      <td>${esc(key)}</td>
+      <td>${g.total}</td>
+      <td>${g.done}</td>
+      <td>${rem}</td>
+      <td>${pct.toFixed(1)}%</td>
+      <td><div class="bar"><span style="width:${Math.min(pct,100)}%"></span></div></td>
+    `;
+    tbody.appendChild(tr);
+  });
+  if(entries.length===0){
+    tbody.innerHTML='<tr><td colspan="6" class="muted">No data for this selection.</td></tr>';
+  }
+}
+
+/* ================================================================
+   RESET
+   ================================================================ */
+$('resetBtn').addEventListener('click',()=>{
+  if(state.chart){state.chart.destroy();state.chart=null;}
+  state.sheets=[];state.currentSheet=null;state.stageCols=[];state.currentStageDateCol=null;
+  $('dropZone').classList.remove('hidden');
+  ['selectPanel','kpiPanel','chartPanel','tablePanel'].forEach(id=>$(id).classList.add('hidden'));
+  $('statusBar').classList.add('hidden');
+  $('systemSel').innerHTML='';
+  $('stageSel').innerHTML='';
+  $('filterSel').innerHTML='<option value="">— all —</option>';
+  $('fileInput').value='';
+});
+</script>
+</body>
+</html>
